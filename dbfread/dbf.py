@@ -55,7 +55,7 @@ DBFField = StructParser(
 
 def expand_year(year):
     """Convert 2-digit year to 4-digit year."""
-    
+
     if year < 80:
         return 2000 + year
     else:
@@ -69,7 +69,7 @@ class RecordIterator(object):
 
     def __iter__(self):
         return self._table._iter_records(self._record_type)
- 
+
     def __len__(self):
         return self._table._count_records(self._record_type)
 
@@ -79,7 +79,7 @@ class DBF(object):
     def __init__(self, filename, encoding=None, ignorecase=True,
                  lowernames=False,
                  parserclass=FieldParser,
-                 recfactory=collections.OrderedDict,
+                 recfactory=dict,
                  load=False,
                  raw=False,
                  ignore_missing_memofile=False,
@@ -121,7 +121,7 @@ class DBF(object):
             self._read_header(infile)
             self._read_field_headers(infile)
             self._check_headers()
-            
+
             try:
                 self.date = datetime.date(expand_year(self.header.year),
                                           self.header.month,
@@ -129,7 +129,7 @@ class DBF(object):
             except ValueError:
                 # Invalid date or '\x00\x00\x00'.
                 self.date = None
- 
+
         self.memofilename = self._get_memofilename()
 
         if load:
@@ -288,49 +288,49 @@ class DBF(object):
 
         return count
 
-    def _iter_records(self, record_type=b' '):
+    def __iter__(self):
         with open(self.filename, 'rb') as infile, \
-             self._open_memofile() as memofile:
-
-            # Skip to first record.
-            infile.seek(self.header.headerlen, 0)
+            self._open_memofile() as memofile:
+            current_pos = 0
 
             if not self.raw:
                 field_parser = self.parserclass(self, memofile)
                 parse = field_parser.parse
 
-            # Shortcuts for speed.
-            skip_record = self._skip_record
-            read = infile.read
+            seek = infile.seek
 
-            while True:
-                sep = read(1)
+            while current_pos < len(self):
+                seek(self.header.headerlen+current_pos*(self.header.recordlen)+1)
+                current_pos += 1
 
-                if sep == record_type:
-                    if self.raw:
-                        items = [(field.name, read(field.length)) \
-                                 for field in self.fields]
-                    else:
-                        items = [(field.name,
-                                  parse(field, read(field.length))) \
-                                 for field in self.fields]
-
-                    yield self.recfactory(items)
-
-                elif sep in (b'\x1a', b''):
-                    # End of records.
-                    break
+                if self.raw:
+                    items = [infile.read(field.length) for field in self.fields]
                 else:
-                    skip_record(infile)
+                    items = [parse(field, infile.read(field.length)) for field in self.fields]
 
-    def __iter__(self):
-        if self.loaded:
-            return list.__iter__(self._records)
-        else:
-            return self._iter_records()
+                yield tuple(items)
 
     def __len__(self):
-        return len(self.records)
+        return self.header.numrecords
+
+    def __getitem__(self, key):
+        if key >= self.header.numrecords or key < 0:
+            raise IndexError
+
+        with open(self.filename, 'rb') as infile, \
+            self._open_memofile() as memofile:
+            if not self.raw:
+                field_parser = self.parserclass(self, memofile)
+                parse = field_parser.parse
+
+            infile.seek(self.header.headerlen+key*(self.header.recordlen)+1)
+
+            if self.raw:
+                items = [infile.read(field.length) for field in self.fields]
+            else:
+                items = [parse(field, infile.read(field.length)) for field in self.fields]
+
+            return tuple(items)
 
     def __repr__(self):
         if self.loaded:
