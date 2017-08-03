@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
-import dbfread
+import pydef
 
 try:
     from setuptools import setup
