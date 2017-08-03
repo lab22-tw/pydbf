@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
-import pydef
+import pydbf
 
 try:
     from setuptools import setup
